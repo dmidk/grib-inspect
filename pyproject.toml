@@ -1,0 +1,24 @@
+[project]
+name = "grib-inspect"
+version = "0.1.0"
+description = "Tool to investigate GRIB files and compare their contents"
+readme = "README.md"
+authors = [
+    { name = "K. Hintz", email = "kah@dmi.dk" }
+]
+requires-python = ">=3.11"
+dependencies = [
+    "eccodes>=2.47.0",
+]
+
+[project.scripts]
+grib-inspect = "grib_inspect.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.6.2",
+]

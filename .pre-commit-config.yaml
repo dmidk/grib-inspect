@@ -17,8 +17,20 @@ repos:
     rev: 22.3.0
     hooks:
       - id: black
-        exclude: graphterm\.py
   - repo: https://github.com/PyCQA/flake8
     rev: 7.1.0
     hooks:
       - id: flake8
+        args:
+          # black wraps at 88, not flake8's default 79 -- match black so the
+          # two tools don't fight each other.
+          - --max-line-length=88
+          # E203 (whitespace before ':') conflicts with black's slice
+          # formatting (e.g. `x[1 :2]` vs `x[1: 2]`); black is right, flake8's
+          # PEP8 reading here is outdated. Recommended by black's own docs.
+          - --extend-ignore=E203
+          # E402 (module import not at top) fires on tests/test_compare.py's
+          # `sys.path.insert(...)` before `from grib_inspect...`, which is
+          # required so the test can import the package without installing
+          # it first.
+          - --per-file-ignores=tests/test_compare.py:E402

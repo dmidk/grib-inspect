@@ -1,4 +1,4 @@
-"""Read a GRIB2 file with eccodes and record identity + encoding metadata per message."""
+"""Read a GRIB2 file with eccodes, record identity + encoding metadata per message."""
 
 from __future__ import annotations
 
@@ -8,34 +8,7 @@ from pathlib import Path
 import eccodes
 
 from . import db
-
-# Identity: what makes two messages across different files/products "the same variable".
-DEFAULT_IDENTITY_KEYS = ["shortName", "typeOfLevel", "level", "stepRange"]
-
-# Encoding/metadata keys worth reporting on. Not exhaustive by design (v1: metadata only,
-# no data values) -- extend with --keys if a comparison needs more.
-DEFAULT_METADATA_KEYS = [
-    "name",
-    "units",
-    "paramId",
-    "editionNumber",
-    "centre",
-    "subCentre",
-    "generatingProcessIdentifier",
-    "typeOfGeneratingProcess",
-    "dataDate",
-    "dataTime",
-    "gridType",
-    "Ni",
-    "Nj",
-    "packingType",
-    "bitsPerValue",
-    "numberOfValues",
-    "missingValue",
-    "typeOfFirstFixedSurface",
-    "scaleFactorOfFirstFixedSurface",
-    "scaledValueOfFirstFixedSurface",
-]
+from .config import DEFAULT_IDENTITY_KEYS, DEFAULT_METADATA_KEYS
 
 
 def _get(msg, key: str):

@@ -29,8 +29,8 @@ repos:
           # formatting (e.g. `x[1 :2]` vs `x[1: 2]`); black is right, flake8's
           # PEP8 reading here is outdated. Recommended by black's own docs.
           - --extend-ignore=E203
-          # E402 (module import not at top) fires on tests/test_compare.py's
+          # E402 (module import not at top) fires on the tests/ self-checks'
           # `sys.path.insert(...)` before `from grib_inspect...`, which is
-          # required so the test can import the package without installing
-          # it first.
-          - --per-file-ignores=tests/test_compare.py:E402
+          # required so a test can import the package without installing it
+          # first (see tests/test_compare.py, tests/test_db.py).
+          - --per-file-ignores=tests/*.py:E402

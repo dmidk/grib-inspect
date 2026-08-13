@@ -22,14 +22,25 @@ class Diff:
     duplicate_identities_b: list[str] = field(default_factory=list)
 
 
-def _index_by_identity(records: list[dict]) -> tuple[dict[str, dict], list[str]]:
-    index: dict[str, dict] = {}
-    duplicates: list[str] = []
+def group_by_identity(records: list[dict]) -> dict[str, list[dict]]:
+    """Group records that share the same identity. Order within a group is
+    insertion order, so the group's last element is what a plain identity-keyed
+    index would keep ("last write wins")."""
+    groups: dict[str, list[dict]] = {}
     for record in records:
-        key = _identity_key(record["identity"])
-        if key in index:
-            duplicates.append(key)
-        index[key] = record  # last one wins, duplicates are reported separately
+        groups.setdefault(_identity_key(record["identity"]), []).append(record)
+    return groups
+
+
+def find_duplicates(records: list[dict]) -> list[list[dict]]:
+    """Return each group of 2+ records that share the same identity."""
+    return [group for group in group_by_identity(records).values() if len(group) > 1]
+
+
+def _index_by_identity(records: list[dict]) -> tuple[dict[str, dict], list[str]]:
+    groups = group_by_identity(records)
+    index = {key: group[-1] for key, group in groups.items()}  # last write wins
+    duplicates = [key for key, group in groups.items() if len(group) > 1]
     return index, duplicates
 
 
@@ -67,8 +78,16 @@ def diff_records(records_a: list[dict], records_b: list[dict]) -> Diff:
     return result
 
 
-def _fmt_identity(identity: dict) -> str:
+def format_identity(identity: dict) -> str:
     return ", ".join(f"{k}={v}" for k, v in identity.items())
+
+
+def _fmt_identity_line(identity: dict, name: str | None) -> str:
+    # `name` (e.g. "Temperature") is purely for human legibility -- it's read
+    # from the "name" metadata key, never from "shortName", and plays no part
+    # in matching (see DEFAULT_IDENTITY_KEYS in config.py).
+    line = format_identity(identity)
+    return f"{line}  ({name})" if name else line
 
 
 def render_report(diff: Diff, label_a: str, label_b: str) -> str:
@@ -83,28 +102,33 @@ def render_report(diff: Diff, label_a: str, label_b: str) -> str:
     if diff.duplicate_identities_a:
         lines.append(
             f"\nWARNING: {len(diff.duplicate_identities_a)} duplicate identities "
-            f"in {label_a} (last write kept)"
+            f"in {label_a} (last write kept -- run `grib-inspect duplicates` "
+            "to see which messages collide)"
         )
     if diff.duplicate_identities_b:
         lines.append(
             f"WARNING: {len(diff.duplicate_identities_b)} duplicate identities "
-            f"in {label_b} (last write kept)"
+            f"in {label_b} (last write kept -- run `grib-inspect duplicates` "
+            "to see which messages collide)"
         )
 
     if diff.only_in_a:
         lines.append(f"\nOnly in {label_a} ({len(diff.only_in_a)}):")
         for record in diff.only_in_a:
-            lines.append(f"  - {_fmt_identity(record['identity'])}")
+            name = record["keys"].get("name")
+            lines.append(f"  - {_fmt_identity_line(record['identity'], name)}")
 
     if diff.only_in_b:
         lines.append(f"\nOnly in {label_b} ({len(diff.only_in_b)}):")
         for record in diff.only_in_b:
-            lines.append(f"  - {_fmt_identity(record['identity'])}")
+            name = record["keys"].get("name")
+            lines.append(f"  - {_fmt_identity_line(record['identity'], name)}")
 
     if diff.differs:
         lines.append(f"\nDiffers ({len(diff.differs)}):")
         for entry in diff.differs:
-            lines.append(f"  - {_fmt_identity(entry['identity'])}")
+            name = entry["record_a"]["keys"].get("name")
+            lines.append(f"  - {_fmt_identity_line(entry['identity'], name)}")
             for k, (va, vb) in entry["changed_keys"].items():
                 lines.append(f"      {k}: {va!r} -> {vb!r}")
 
@@ -115,10 +139,14 @@ def _esc(value) -> str:
     return html.escape(str(value)) if value is not None else "<em>null</em>"
 
 
-def _identity_cell(identity: dict) -> str:
-    return "<br>".join(
+def _identity_cell(identity: dict, name: str | None = None) -> str:
+    cell = "<br>".join(
         f"<b>{html.escape(k)}</b>={_esc(v)}" for k, v in identity.items()
     )
+    if name:
+        # display-only, sourced from the "name" metadata key, never shortName
+        cell += f"<div class='name'>{_esc(name)}</div>"
+    return cell
 
 
 def _changed_keys_cell(changed_keys: dict) -> str:
@@ -134,7 +162,8 @@ def _identity_only_table(records: list[dict]) -> str:
     if not records:
         return "<p class='empty'>none</p>"
     rows = "".join(
-        f"<tr><td>{_identity_cell(r['identity'])}</td></tr>" for r in records
+        f"<tr><td>{_identity_cell(r['identity'], r['keys'].get('name'))}</td></tr>"
+        for r in records
     )
     return f"<table><tr><th>Identity</th></tr>{rows}</table>"
 
@@ -143,8 +172,8 @@ def _differs_table(entries: list[dict]) -> str:
     if not entries:
         return "<p class='empty'>none</p>"
     rows = "".join(
-        f"<tr><td>{_identity_cell(e['identity'])}</td>"
-        f"<td>{_changed_keys_cell(e['changed_keys'])}</td></tr>"
+        f"<tr><td>{_identity_cell(e['identity'], e['record_a']['keys'].get('name'))}"
+        f"</td><td>{_changed_keys_cell(e['changed_keys'])}</td></tr>"
         for e in entries
     )
     return f"<table><tr><th>Identity</th><th>Changed keys</th></tr>{rows}</table>"
@@ -164,10 +193,26 @@ h2.only-b + table td { background: #eaf3fd; }
 h2.differs + table td { background: #fff7e0; }
 .val-a { color: #b3261e; text-decoration: line-through; }
 .val-b { color: #1e6b3a; font-weight: 600; }
+.name { color: #666; font-style: italic; margin-top: 4px; }
 .summary span { display: inline-block; margin-right: 1.5rem; }
 .warning { color: #9a5b00; }
 .empty { color: #777; font-style: italic; }
+.disclaimer { background: #f4f4f4; border-left: 3px solid #999; padding: 0.6rem 1rem;
+              margin: 1rem 0; font-size: 0.85rem; color: #444; }
 """
+
+_DISCLAIMER = (
+    "<div class='disclaimer'><b>Note:</b> \"Only in\" entries are computed by "
+    "strict identity matching (discipline, parameterCategory, parameterNumber, "
+    "typeOfLevel, level, stepRange, typeOfStatisticalProcessing by default). "
+    "Two entries can be the exact same physical variable encoded under a "
+    "different level convention between products (e.g. a diagnostic reported "
+    "at <code>heightAboveGround=0</code> in one and a named layer like "
+    "<code>highCloudLayer=450</code> in the other) and will still show up as "
+    '"only in" on both sides -- that is expected, programmatic behavior, '
+    "not necessarily a real product difference. Cross-check by parameter "
+    'name/code when investigating "only in" entries.</div>'
+)
 
 
 def render_html(diff: Diff, label_a: str, label_b: str) -> str:
@@ -175,12 +220,16 @@ def render_html(diff: Diff, label_a: str, label_b: str) -> str:
     if diff.duplicate_identities_a:
         warnings += (
             f"<p class='warning'>WARNING: {len(diff.duplicate_identities_a)} "
-            f"duplicate identities in {_esc(label_a)} (last write kept)</p>"
+            f"duplicate identities in {_esc(label_a)} (last write kept -- run "
+            "<code>grib-inspect duplicates</code> to see which messages "
+            "collide)</p>"
         )
     if diff.duplicate_identities_b:
         warnings += (
             f"<p class='warning'>WARNING: {len(diff.duplicate_identities_b)} "
-            f"duplicate identities in {_esc(label_b)} (last write kept)</p>"
+            f"duplicate identities in {_esc(label_b)} (last write kept -- run "
+            "<code>grib-inspect duplicates</code> to see which messages "
+            "collide)</p>"
         )
 
     return f"""<!doctype html>
@@ -198,6 +247,7 @@ def render_html(diff: Diff, label_a: str, label_b: str) -> str:
 <span>only in {_esc(label_a)}: {len(diff.only_in_a)}</span>
 <span>only in {_esc(label_b)}: {len(diff.only_in_b)}</span>
 </p>
+{_DISCLAIMER}
 {warnings}
 <h2 class="differs">Differs ({len(diff.differs)})</h2>
 {_differs_table(diff.differs)}

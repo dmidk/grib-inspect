@@ -1,4 +1,4 @@
-"""Assert-based self-check for the dynamic-column db layer. Run: python tests/test_db.py"""
+"""Assert-based self-check for the db layer. Run: python tests/test_db.py"""
 
 import sys
 from pathlib import Path

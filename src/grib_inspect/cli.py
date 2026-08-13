@@ -26,7 +26,7 @@ def cmd_scan(args: argparse.Namespace) -> int:
     metadata_keys = args.keys.split(",") if args.keys else None
     tags = _parse_tags(args.tag)
 
-    count = scan_file(
+    result = scan_file(
         Path(args.file),
         Path(args.db_out),
         model=args.model,
@@ -35,9 +35,46 @@ def cmd_scan(args: argparse.Namespace) -> int:
         metadata_keys=metadata_keys,
     )
     print(
-        f"Scanned {count} messages from {args.file} into "
+        f"Scanned {result.count} messages from {args.file} into "
         f"{args.db_out} (model={args.model})"
     )
+    if result.duplicates:
+        print(
+            f"WARNING: {len(result.duplicates)} duplicate identity group(s) "
+            f"in model {args.model!r} -- run `grib-inspect duplicates "
+            f"{args.db_out} --model {args.model}` for details",
+            file=sys.stderr,
+        )
+    return 0
+
+
+def cmd_duplicates(args: argparse.Namespace) -> int:
+    conn = db.connect(Path(args.db))
+    try:
+        models = [args.model] if args.model else db.distinct_models(conn)
+        found_any = False
+        for model in models:
+            records = db.fetch_records(conn, model=model)
+            groups = compare_mod.find_duplicates(records)
+            if not groups:
+                continue
+            found_any = True
+            print(f"Model {model!r}: {len(groups)} duplicate identity group(s)")
+            for group in groups:
+                name = group[0]["keys"].get("name")
+                identity_line = compare_mod.format_identity(group[0]["identity"])
+                label = f"{identity_line}  ({name})" if name else identity_line
+                print(f"  - {label}")
+                for record in group:
+                    print(
+                        f"      source_file={record['source_file']}  "
+                        f"message_index={record['message_index']} (0-based)"
+                    )
+    finally:
+        conn.close()
+
+    if not found_any:
+        print("No duplicate identities found.")
     return 0
 
 
@@ -102,7 +139,8 @@ def build_parser() -> argparse.ArgumentParser:
     scan_parser.add_argument(
         "--identity-keys",
         help="comma-separated GRIB keys identifying a message across files "
-        "(default: shortName,typeOfLevel,level,stepRange)",
+        "(default: discipline,parameterCategory,parameterNumber,"
+        "typeOfLevel,level,stepRange)",
     )
     scan_parser.add_argument(
         "--keys",
@@ -122,6 +160,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--html", help="also write a self-contained HTML diff report to this path"
     )
     compare_parser.set_defaults(func=cmd_compare)
+
+    duplicates_parser = subparsers.add_parser(
+        "duplicates", help="list messages that share an identity within a report"
+    )
+    duplicates_parser.add_argument("db", help="path to the report db")
+    duplicates_parser.add_argument(
+        "--model", help="restrict to this model label (default: check every model)"
+    )
+    duplicates_parser.set_defaults(func=cmd_duplicates)
 
     return parser
 

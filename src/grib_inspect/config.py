@@ -3,15 +3,25 @@
 from __future__ import annotations
 
 # Identity: what makes two messages across different files/products "the same variable".
-DEFAULT_IDENTITY_KEYS = ["shortName", "typeOfLevel", "level", "stepRange"]
+# discipline+parameterCategory+parameterNumber is the WMO GRIB2 parameter definition
+# (Table 4.2) -- the actual, tool-independent identity of a field. shortName is an
+# eccodes-derived alias layered on top of that and is deliberately excluded here: it
+# can vary across eccodes/definitions versions even when the underlying parameter is
+# identical (kept in DEFAULT_METADATA_KEYS below for display).
+DEFAULT_IDENTITY_KEYS = [
+    "discipline",
+    "parameterCategory",
+    "parameterNumber",
+    "typeOfLevel",
+    "level",
+    "stepRange",
+    "typeOfStatisticalProcessing",
+]
 
 # Encoding/metadata keys worth reporting on. Not exhaustive by design
 # (v1: metadata only, no data values) -- extend with --keys if a comparison needs more.
 DEFAULT_METADATA_KEYS = [
-    "discipline",
-    "parameterCategory",
-    "parameterNumber",
-    "typeOfStatisticalProcessing",
+    "shortName",
     "name",
     "units",
     "paramId",
@@ -20,9 +30,8 @@ DEFAULT_METADATA_KEYS = [
     "subCentre",
     "generatingProcessIdentifier",
     "typeOfGeneratingProcess",
-    "dataDate",
-    "dataTime",
     "gridType",
+    "gridDefinitionTemplateNumber",
     "Ni",
     "Nj",
     "packingType",
@@ -36,5 +45,4 @@ DEFAULT_METADATA_KEYS = [
     "productDefinitionTemplateNumber",
     "stepType",
     "stepUnits",
-    "stepRange",
 ]

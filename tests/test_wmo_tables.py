@@ -1,4 +1,4 @@
-"""Assert-based self-check for the WMO table fallback. Run: python tests/test_wmo_tables.py"""
+"""Self-check for the WMO table fallback. Run: python tests/test_wmo_tables.py"""
 
 import sys
 from pathlib import Path

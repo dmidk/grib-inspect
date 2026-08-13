@@ -8,7 +8,7 @@ from __future__ import annotations
 # eccodes-derived alias layered on top of that and is deliberately excluded here: it
 # can vary across eccodes/definitions versions even when the underlying parameter is
 # identical (kept in DEFAULT_METADATA_KEYS below for display).
-DEFAULT_IDENTITY_KEYS = [
+DEFAULT_IDENTITY_KEYS: list[str] = [
     "discipline",
     "parameterCategory",
     "parameterNumber",
@@ -20,7 +20,7 @@ DEFAULT_IDENTITY_KEYS = [
 
 # Encoding/metadata keys worth reporting on. Not exhaustive by design
 # (v1: metadata only, no data values) -- extend with --keys if a comparison needs more.
-DEFAULT_METADATA_KEYS = [
+DEFAULT_METADATA_KEYS: list[str] = [
     "shortName",
     "name",
     "units",

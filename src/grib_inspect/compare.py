@@ -8,14 +8,24 @@ from dataclasses import dataclass, field
 
 
 def _identity_key(identity: dict) -> str:
+    """Canonical, hashable form of an identity dict for use as a dict key."""
     return json.dumps(identity, sort_keys=True)
 
 
 @dataclass
 class Diff:
+    """Result of comparing two record sets by identity.
+
+    `only_in_a`/`only_in_b` hold records with no identity match on the other
+    side. `differs` holds matched pairs whose metadata keys disagree (each
+    entry: {"identity", "record_a", "record_b", "changed_keys": {key: (a, b)}}).
+    `identical` holds matched pairs with no differences. `duplicate_identities_*`
+    lists identity keys that appeared more than once on that side (see
+    `find_duplicates` to get the actual colliding records).
+    """
+
     only_in_a: list[dict] = field(default_factory=list)
     only_in_b: list[dict] = field(default_factory=list)
-    # each entry: {"identity", "record_a", "record_b", "changed_keys": {key: (a, b)}}
     differs: list[dict] = field(default_factory=list)
     identical: list[dict] = field(default_factory=list)
     duplicate_identities_a: list[str] = field(default_factory=list)
@@ -38,6 +48,8 @@ def find_duplicates(records: list[dict]) -> list[list[dict]]:
 
 
 def _index_by_identity(records: list[dict]) -> tuple[dict[str, dict], list[str]]:
+    """Collapse records to one-per-identity (last write wins) plus the list of
+    identity keys that had more than one record."""
     groups = group_by_identity(records)
     index = {key: group[-1] for key, group in groups.items()}  # last write wins
     duplicates = [key for key, group in groups.items() if len(group) > 1]
@@ -45,6 +57,8 @@ def _index_by_identity(records: list[dict]) -> tuple[dict[str, dict], list[str]]
 
 
 def diff_records(records_a: list[dict], records_b: list[dict]) -> Diff:
+    """Match records_a against records_b by identity and classify each pair
+    as only-in-a, only-in-b, differs (metadata keys disagree), or identical."""
     index_a, dup_a = _index_by_identity(records_a)
     index_b, dup_b = _index_by_identity(records_b)
 
@@ -79,18 +93,23 @@ def diff_records(records_a: list[dict], records_b: list[dict]) -> Diff:
 
 
 def format_identity(identity: dict) -> str:
+    """Render an identity dict as "key=value, key=value, ..."."""
     return ", ".join(f"{k}={v}" for k, v in identity.items())
 
 
 def _fmt_identity_line(identity: dict, name: str | None) -> str:
-    # `name` (e.g. "Temperature") is purely for human legibility -- it's read
-    # from the "name" metadata key, never from "shortName", and plays no part
-    # in matching (see DEFAULT_IDENTITY_KEYS in config.py).
+    """Identity line with an optional trailing "(name)" for human legibility.
+
+    `name` (e.g. "Temperature") is purely for human legibility -- it's read
+    from the "name" metadata key, never from "shortName", and plays no part
+    in matching (see DEFAULT_IDENTITY_KEYS in config.py).
+    """
     line = format_identity(identity)
     return f"{line}  ({name})" if name else line
 
 
 def render_report(diff: Diff, label_a: str, label_b: str) -> str:
+    """Render a Diff as a plain-text terminal report."""
     lines = []
     lines.append(f"Comparing {label_a!r} vs {label_b!r}")
     lines.append(
@@ -135,21 +154,24 @@ def render_report(diff: Diff, label_a: str, label_b: str) -> str:
     return "\n".join(lines)
 
 
-def _esc(value) -> str:
+def _esc(value: object) -> str:
+    """HTML-escape a value for safe embedding, rendering None as <em>null</em>."""
     return html.escape(str(value)) if value is not None else "<em>null</em>"
 
 
 def _identity_cell(identity: dict, name: str | None = None) -> str:
+    """HTML for one <td>'s worth of identity key=value lines, plus an
+    optional muted "name" line (display-only, never shortName)."""
     cell = "<br>".join(
         f"<b>{html.escape(k)}</b>={_esc(v)}" for k, v in identity.items()
     )
     if name:
-        # display-only, sourced from the "name" metadata key, never shortName
         cell += f"<div class='name'>{_esc(name)}</div>"
     return cell
 
 
 def _changed_keys_cell(changed_keys: dict) -> str:
+    """HTML for one <td>'s worth of "key: old -> new" lines."""
     return "".join(
         f"<div><b>{html.escape(k)}</b>: "
         f"<span class='val-a'>{_esc(va)}</span> &rarr; "
@@ -159,6 +181,7 @@ def _changed_keys_cell(changed_keys: dict) -> str:
 
 
 def _identity_only_table(records: list[dict]) -> str:
+    """HTML table of identities for an only-in-a/only-in-b list."""
     if not records:
         return "<p class='empty'>none</p>"
     rows = "".join(
@@ -169,6 +192,7 @@ def _identity_only_table(records: list[dict]) -> str:
 
 
 def _differs_table(entries: list[dict]) -> str:
+    """HTML table of identity + changed-keys rows for a differs list."""
     if not entries:
         return "<p class='empty'>none</p>"
     rows = "".join(
@@ -216,6 +240,7 @@ _DISCLAIMER = (
 
 
 def render_html(diff: Diff, label_a: str, label_b: str) -> str:
+    """Render a Diff as a self-contained HTML report (inline CSS, no JS)."""
     warnings = ""
     if diff.duplicate_identities_a:
         warnings += (

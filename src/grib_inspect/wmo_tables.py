@@ -20,10 +20,13 @@ _latest_version: int | None = None
 
 
 def _tables_root() -> Path:
+    """Root directory of eccodes' bundled GRIB2 code tables."""
     return Path(eccodes.codes_definition_path()) / "grib2" / "tables"
 
 
 def _latest_table_version() -> int:
+    """Highest table version number eccodes has bundled, cached after first
+    call (WMO table versions are additive, so "latest" is the most complete)."""
     global _latest_version
     if _latest_version is None:
         versions = [int(p.name) for p in _tables_root().iterdir() if p.name.isdigit()]
@@ -32,11 +35,17 @@ def _latest_table_version() -> int:
 
 
 def _load_table(discipline: int, category: int) -> dict[int, str]:
+    """Parse (and cache) one 4.2.<discipline>.<category>.table file into a
+    {parameterNumber: description} dict. Missing files yield an empty dict."""
     key = (discipline, category)
     if key in _table_cache:
         return _table_cache[key]
 
-    table_file = _tables_root() / str(_latest_table_version()) / f"4.2.{discipline}.{category}.table"
+    table_file = (
+        _tables_root()
+        / str(_latest_table_version())
+        / f"4.2.{discipline}.{category}.table"
+    )
     entries: dict[int, str] = {}
     if table_file.exists():
         for line in table_file.read_text().splitlines():
@@ -50,7 +59,11 @@ def _load_table(discipline: int, category: int) -> dict[int, str]:
     return entries
 
 
-def lookup_parameter_name(discipline, category, number) -> str | None:
+def lookup_parameter_name(
+    discipline: int | str | None,
+    category: int | str | None,
+    number: int | str | None,
+) -> str | None:
     """Look up a GRIB2 parameter's name straight from Table 4.2, bypassing
     eccodes' concept resolution. Returns None if any input is missing/None
     or the table has no entry for that code (e.g. reserved/local-use)."""

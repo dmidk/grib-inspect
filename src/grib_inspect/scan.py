@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import NamedTuple
@@ -13,18 +14,24 @@ from .config import DEFAULT_IDENTITY_KEYS, DEFAULT_METADATA_KEYS
 
 
 class ScanResult(NamedTuple):
+    """Outcome of a single `scan_file()` call."""
+
     count: int
     duplicates: list[list[dict]]  # groups of 2+ messages sharing an identity
 
 
-def _get(msg, key: str):
+def _get(msg: int, key: str) -> str | int | float | None:
+    """codes_get, returning None instead of raising for keys the message
+    doesn't have (common -- not every key applies to every product/PDT)."""
     try:
         return eccodes.codes_get(msg, key)
     except eccodes.KeyValueNotFoundError:
         return None
 
 
-def iter_messages(path: Path):
+def iter_messages(path: Path) -> Iterator[int]:
+    """Yield eccodes message handles from a GRIB file, one at a time,
+    releasing each before advancing to the next."""
     with open(path, "rb") as f:
         while True:
             msg = eccodes.codes_grib_new_from_file(f)

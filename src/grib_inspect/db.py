@@ -44,6 +44,7 @@ CREATE INDEX IF NOT EXISTS idx_messages_model ON messages(model);
 
 
 def connect(db_path: Path) -> sqlite3.Connection:
+    """Open (creating if needed) a report db and ensure the base schema exists."""
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     conn.executescript(SCHEMA)
@@ -51,10 +52,15 @@ def connect(db_path: Path) -> sqlite3.Connection:
 
 
 def _existing_columns(conn: sqlite3.Connection) -> set[str]:
+    """Names of every column currently on the messages table."""
     return {row[1] for row in conn.execute("PRAGMA table_info(messages)")}
 
 
 def _ensure_columns(conn: sqlite3.Connection, names: list[str]) -> None:
+    """ALTER TABLE ADD COLUMN for any name not already present.
+
+    Validates each name against `_VALID_COLUMN` and rejects collisions with
+    `BASE_COLUMNS` before touching the schema (see module docstring)."""
     existing = _existing_columns(conn)
     for name in names:
         if not _VALID_COLUMN.match(name):
@@ -81,6 +87,8 @@ def insert_message(
     tags: dict,
     ingested_at: str,
 ) -> None:
+    """Insert one message row, adding any missing identity/metadata columns
+    first so every captured key ends up as a real, queryable column."""
     value_columns = {**identity, **keys}
     _ensure_columns(conn, list(value_columns))
 
@@ -108,6 +116,10 @@ def insert_message(
 
 
 def fetch_records(conn: sqlite3.Connection, model: str | None = None) -> list[dict]:
+    """Fetch messages (optionally filtered to one model) as records shaped
+    {"model", "source_file", "message_index", "identity", "keys", "tags"},
+    splitting each row's columns back into identity vs. metadata using the
+    row's own stored `identity_keys`."""
     query = "SELECT * FROM messages"
     params: tuple = ()
     if model is not None:
@@ -139,6 +151,7 @@ def fetch_records(conn: sqlite3.Connection, model: str | None = None) -> list[di
 
 
 def distinct_models(conn: sqlite3.Connection) -> list[str]:
+    """Every distinct model label present in the report, sorted."""
     return [
         r[0] for r in conn.execute("SELECT DISTINCT model FROM messages ORDER BY model")
     ]

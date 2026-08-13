@@ -12,7 +12,8 @@ from .scan import scan_file
 
 
 def _parse_tags(pairs: list[str]) -> dict[str, str]:
-    tags = {}
+    """Parse repeated --tag key=value strings into a dict."""
+    tags: dict[str, str] = {}
     for pair in pairs:
         if "=" not in pair:
             raise argparse.ArgumentTypeError(f"--tag must be key=value, got {pair!r}")
@@ -22,6 +23,7 @@ def _parse_tags(pairs: list[str]) -> dict[str, str]:
 
 
 def cmd_scan(args: argparse.Namespace) -> int:
+    """Handler for `grib-inspect scan`."""
     identity_keys = args.identity_keys.split(",") if args.identity_keys else None
     metadata_keys = args.keys.split(",") if args.keys else None
     tags = _parse_tags(args.tag)
@@ -49,6 +51,7 @@ def cmd_scan(args: argparse.Namespace) -> int:
 
 
 def cmd_duplicates(args: argparse.Namespace) -> int:
+    """Handler for `grib-inspect duplicates`."""
     conn = db.connect(Path(args.db))
     try:
         models = [args.model] if args.model else db.distinct_models(conn)
@@ -79,6 +82,7 @@ def cmd_duplicates(args: argparse.Namespace) -> int:
 
 
 def cmd_compare(args: argparse.Namespace) -> int:
+    """Handler for `grib-inspect compare`."""
     conn_a = db.connect(Path(args.db_a))
     conn_b = db.connect(Path(args.db_b))
     try:
@@ -115,6 +119,7 @@ def cmd_compare(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Build the grib-inspect argparse CLI (scan / compare / duplicates)."""
     parser = argparse.ArgumentParser(prog="grib-inspect")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -174,6 +179,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Entry point for the `grib-inspect` console script."""
     parser = build_parser()
     args = parser.parse_args(argv)
     return args.func(args)

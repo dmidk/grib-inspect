@@ -12,6 +12,13 @@ repos:
     rev: 5.12.0
     hooks:
       - id: isort
+        args:
+          # Without this, isort's default multi-line import style disagrees
+          # with black's (hanging indent, trailing comma) on any import with
+          # 3+ names -- each hook then "fixes" the other's output forever,
+          # never converging. --profile=black is isort's own documented fix
+          # for this exact isort/black incompatibility.
+          - --profile=black
   # https://github.com/python/black#version-control-integration
   - repo: https://github.com/psf/black
     rev: 22.3.0

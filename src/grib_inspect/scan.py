@@ -21,9 +21,14 @@ class ScanResult(NamedTuple):
 
 
 def _get(msg: int, key: str) -> str | int | float | None:
-    """codes_get, returning None instead of raising for keys the message
-    doesn't have (common -- not every key applies to every product/PDT)."""
+    """codes_get, returning None for keys the message doesn't have (common --
+    not every key applies to every product/PDT) or that eccodes has flagged
+    as unset via its missing-value sentinel (e.g. 2147483647 for integer
+    keys) -- otherwise a genuinely unset key reads as a huge bogus number
+    instead of "not set"."""
     try:
+        if eccodes.codes_is_missing(msg, key):
+            return None
         return eccodes.codes_get(msg, key)
     except eccodes.KeyValueNotFoundError:
         return None

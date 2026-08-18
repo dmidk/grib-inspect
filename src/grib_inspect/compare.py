@@ -5,6 +5,7 @@ from __future__ import annotations
 import html
 import json
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 
 
 def _identity_key(identity: dict) -> str:
@@ -92,6 +93,41 @@ def diff_records(records_a: list[dict], records_b: list[dict]) -> Diff:
     return result
 
 
+def summarize_changed_keys(diff: Diff) -> list[dict]:
+    """Aggregate how often each metadata key changed across `diff.differs`,
+    and whether it always changed the same way (e.g. "centre: ekmi -> lfpw
+    in all 839") or varied from one message to the next.
+
+    Returns entries {"key", "count", "total", "consistent", "example"}
+    sorted by count descending, so the most pervasive changes come first.
+    `example` is the single (old, new) pair when `consistent` is True, else
+    None. Surfaces patterns like "every message got a new grid/packing"
+    without having to read every row of the detailed diff.
+    """
+    counts: dict[str, int] = {}
+    value_pairs: dict[str, set[tuple]] = {}
+    for entry in diff.differs:
+        for key, pair in entry["changed_keys"].items():
+            counts[key] = counts.get(key, 0) + 1
+            value_pairs.setdefault(key, set()).add(pair)
+
+    total = len(diff.differs)
+    summary = [
+        {
+            "key": key,
+            "count": count,
+            "total": total,
+            "consistent": len(value_pairs[key]) == 1,
+            "example": next(iter(value_pairs[key]))
+            if len(value_pairs[key]) == 1
+            else None,
+        }
+        for key, count in counts.items()
+    ]
+    summary.sort(key=lambda s: (-s["count"], s["key"]))
+    return summary
+
+
 def format_identity(identity: dict) -> str:
     """Render an identity dict as "key=value, key=value, ..."."""
     return ", ".join(f"{k}={v}" for k, v in identity.items())
@@ -159,6 +195,11 @@ def _esc(value: object) -> str:
     return html.escape(str(value)) if value is not None else "<em>null</em>"
 
 
+def _generated_at() -> str:
+    """Current UTC timestamp for the report header, second precision."""
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
 def _identity_cell(identity: dict, name: str | None = None) -> str:
     """HTML for one <td>'s worth of identity key=value lines, plus an
     optional muted "name" line (display-only, never shortName)."""
@@ -203,24 +244,60 @@ def _differs_table(entries: list[dict]) -> str:
     return f"<table><tr><th>Identity</th><th>Changed keys</th></tr>{rows}</table>"
 
 
+def _changes_summary_table(summary: list[dict]) -> str:
+    """HTML table for `summarize_changed_keys()`'s output -- the high-level
+    changeset shown before the row-by-row detailed diff."""
+    if not summary:
+        return ""
+    rows = []
+    for entry in summary:
+        fraction = f"{entry['count']}/{entry['total']}"
+        if entry["consistent"]:
+            va, vb = entry["example"]
+            change = (
+                f"<span class='val-a'>{_esc(va)}</span> &rarr; "
+                f"<span class='val-b'>{_esc(vb)}</span>"
+            )
+        else:
+            change = "<span class='varies'>varies</span>"
+        rows.append(
+            f"<tr><td><b>{html.escape(entry['key'])}</b></td>"
+            f"<td>{fraction}</td><td>{change}</td></tr>"
+        )
+    table = "".join(rows)
+    return (
+        "<h2>Common changes</h2>"
+        "<p class='note'>How often each metadata key changed across every "
+        "differing message below. A fraction of N/N means that key changed "
+        "for every one of them (e.g. a whole-grid or packing change); a "
+        "smaller fraction means it only affected some.</p>"
+        "<table><tr><th>Key</th><th>Changed in</th><th>Change</th></tr>"
+        f"{table}</table>"
+    )
+
+
 _HTML_STYLE = """
 body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
        margin: 2rem; color: #1a1a1a; }
 h1 { font-size: 1.25rem; }
+.generated-at { color: #777; font-size: 0.8rem; margin-top: -0.5rem; }
 h2 { font-size: 1.05rem; margin-top: 2rem; }
+h3 { font-size: 0.95rem; margin-top: 1.5rem; }
 table { border-collapse: collapse; width: 100%; font-size: 0.85rem; }
 th, td { border: 1px solid #ddd; padding: 6px 10px; text-align: left; }
 td { vertical-align: top; }
 th { background: #f4f4f4; }
-h2.only-a + table td { background: #fdecea; }
-h2.only-b + table td { background: #eaf3fd; }
-h2.differs + table td { background: #fff7e0; }
+h3.only-a + table td { background: #fdecea; }
+h3.only-b + table td { background: #eaf3fd; }
+h3.differs + table td { background: #fff7e0; }
 .val-a { color: #b3261e; text-decoration: line-through; }
 .val-b { color: #1e6b3a; font-weight: 600; }
+.varies { color: #777; font-style: italic; }
 .name { color: #666; font-style: italic; margin-top: 4px; }
 .summary span { display: inline-block; margin-right: 1.5rem; }
 .warning { color: #9a5b00; }
 .empty { color: #777; font-style: italic; }
+.note { color: #666; font-size: 0.85rem; margin: 0 0 0.75rem 0; }
 .disclaimer { background: #f4f4f4; border-left: 3px solid #999; padding: 0.6rem 1rem;
               margin: 1rem 0; font-size: 0.85rem; color: #444; }
 """
@@ -266,6 +343,7 @@ def render_html(diff: Diff, label_a: str, label_b: str) -> str:
 </head>
 <body>
 <h1>Comparing {_esc(label_a)} vs {_esc(label_b)}</h1>
+<p class="generated-at">Generated at {_generated_at()}</p>
 <p class="summary">
 <span>identical: {len(diff.identical)}</span>
 <span>differs: {len(diff.differs)}</span>
@@ -274,11 +352,13 @@ def render_html(diff: Diff, label_a: str, label_b: str) -> str:
 </p>
 {_DISCLAIMER}
 {warnings}
-<h2 class="differs">Differs ({len(diff.differs)})</h2>
+{_changes_summary_table(summarize_changed_keys(diff))}
+<h2>Detailed changes</h2>
+<h3 class="differs">Differs ({len(diff.differs)})</h3>
 {_differs_table(diff.differs)}
-<h2 class="only-a">Only in {_esc(label_a)} ({len(diff.only_in_a)})</h2>
+<h3 class="only-a">Only in {_esc(label_a)} ({len(diff.only_in_a)})</h3>
 {_identity_only_table(diff.only_in_a)}
-<h2 class="only-b">Only in {_esc(label_b)} ({len(diff.only_in_b)})</h2>
+<h3 class="only-b">Only in {_esc(label_b)} ({len(diff.only_in_b)})</h3>
 {_identity_only_table(diff.only_in_b)}
 </body>
 </html>

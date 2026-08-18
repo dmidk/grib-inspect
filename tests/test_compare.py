@@ -11,6 +11,7 @@ from grib_inspect.compare import (
     group_by_identity,
     render_html,
     render_report,
+    summarize_changed_keys,
 )
 
 
@@ -74,6 +75,7 @@ def test_render_html_contains_expected_sections():
     assert "grid_simple" in out and "grid_ccsds" in out
     assert "10u" in out  # only-in-a entry present
     assert "class='disclaimer'" in out
+    assert "Generated at" in out
 
 
 def test_render_html_escapes_special_characters():
@@ -138,6 +140,60 @@ def test_find_duplicates_returns_only_groups_with_2_plus():
 def test_find_duplicates_empty_when_all_unique():
     a = [record("2t", 2), record("10u", 10)]
     assert find_duplicates(a) == []
+
+
+def test_summarize_changed_keys_consistent_change():
+    a = [
+        record("2t", 2, centre="ekmi", packingType="grid_simple"),
+        record("10u", 10, centre="ekmi", packingType="grid_ccsds"),
+    ]
+    b = [
+        record("2t", 2, centre="lfpw", packingType="grid_ccsds"),
+        record("10u", 10, centre="lfpw", packingType="grid_simple"),
+    ]
+    diff = diff_records(a, b)
+    summary = {s["key"]: s for s in summarize_changed_keys(diff)}
+
+    assert summary["centre"]["count"] == 2
+    assert summary["centre"]["total"] == 2
+    assert summary["centre"]["consistent"] is True
+    assert summary["centre"]["example"] == ("ekmi", "lfpw")
+
+    # packingType flips both directions across the two entries -> not consistent
+    assert summary["packingType"]["consistent"] is False
+    assert summary["packingType"]["example"] is None
+
+
+def test_summarize_changed_keys_sorted_by_count_desc():
+    a = [
+        record("2t", 2, centre="ekmi", packingType="grid_simple"),
+        record("10u", 10, centre="ekmi"),
+    ]
+    b = [
+        record("2t", 2, centre="lfpw", packingType="grid_ccsds"),
+        record("10u", 10, centre="lfpw"),
+    ]
+    diff = diff_records(a, b)
+    summary = summarize_changed_keys(diff)
+    assert [s["key"] for s in summary] == ["centre", "packingType"]
+
+
+def test_summarize_changed_keys_empty_when_no_differs():
+    a = [record("2t", 2, centre="ekmi")]
+    b = [record("2t", 2, centre="ekmi")]
+    diff = diff_records(a, b)
+    assert summarize_changed_keys(diff) == []
+
+
+def test_render_html_includes_common_changes_summary():
+    a = [record("2t", 2, centre="ekmi"), record("10u", 10, centre="ekmi")]
+    b = [record("2t", 2, centre="lfpw"), record("10u", 10, centre="lfpw")]
+    diff = diff_records(a, b)
+    out = render_html(diff, "a", "b")
+    assert "Common changes" in out
+    assert "class='note'" in out
+    assert "2/2" in out
+    assert "ekmi" in out and "lfpw" in out
 
 
 if __name__ == "__main__":
